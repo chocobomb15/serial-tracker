@@ -8,6 +8,7 @@
 
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <!-- React -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -18,7 +19,6 @@
   <script>
     /* ============================================================
        ★ 여기만 본인 Firebase 설정으로 교체하세요 ★
-       Firebase 콘솔 → 프로젝트 설정 → 내 앱 → firebaseConfig
     ============================================================ */
     const firebaseConfig = {
       apiKey: "AIzaSyBoRXCrrFv0f5vcPMk-tx6elYy-faMKuH8",
@@ -34,10 +34,7 @@
       try {
         const snap = await firebase.firestore().doc("tracker/main").get();
         return snap.exists ? snap.data() : { works: [] };
-      } catch(e) {
-        console.error("load error", e);
-        return { works: [] };
-      }
+      } catch(e) { return { works: [] }; }
     }
     async function saveData(works) {
       await firebase.firestore().doc("tracker/main").set({ works });
@@ -50,13 +47,9 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, forwardRef } = React;
 
+    // ── 상수 ──────────────────────────────────────────────────────
     const PALETTE = ["#C45C8A","#7B5EA7","#4A90D9","#3BA68C","#D4823A","#C0544A","#5B8E6B","#6E7A8A"];
-
-    const formatDate = (s) => {
-      if (!s) return "";
-      const [,m,d] = s.split("-");
-      return `${parseInt(m)}/${parseInt(d)}`;
-    };
+    const formatDate = (s) => { if (!s) return ""; const [,m,d] = s.split("-"); return `${parseInt(m)}/${parseInt(d)}`; };
     const today = () => new Date().toISOString().split("T")[0];
     const daysUntil = (s) => {
       if (!s) return null;
@@ -74,27 +67,121 @@
       });
     };
 
-    // ── App ──────────────────────────────────────────────────────
+    // ── 로그인 화면 ───────────────────────────────────────────────
+    function LoginScreen({ onLogin }) {
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [error, setError] = useState("");
+      const [loading, setLoading] = useState(false);
+
+      const handleLogin = async () => {
+        setError(""); setLoading(true);
+        try {
+          await firebase.auth().signInWithEmailAndPassword(email, password);
+          onLogin();
+        } catch(e) {
+          if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password" || e.code === "auth/user-not-found") {
+            setError("이메일 또는 비밀번호가 틀렸습니다.");
+          } else {
+            setError("로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+          }
+        }
+        setLoading(false);
+      };
+
+      const handleKeyDown = (e) => { if (e.key === "Enter") handleLogin(); };
+
+      const inp = { background:"#1A1A24", border:"1px solid #2E2E40", color:"#C8C4BE", borderRadius:8, padding:"10px 14px", fontSize:14, outline:"none", width:"100%" };
+
+      return (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#13131A",fontFamily:"'Segoe UI',system-ui,sans-serif",padding:16}}>
+          <div style={{width:"100%",maxWidth:360,display:"flex",flexDirection:"column",gap:24}}>
+            {/* 헤더 */}
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.15em",color:"#555",marginBottom:6}}>SERIAL</div>
+              <div style={{fontSize:22,fontWeight:700,color:"#E8E4DE",letterSpacing:"-0.02em"}}>회차 트래커</div>
+            </div>
+
+            {/* 폼 */}
+            <div style={{background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:14,padding:24,display:"flex",flexDirection:"column",gap:14}}>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:"0.08em",color:"#555",textTransform:"uppercase"}}>이메일</label>
+                <input
+                  type="email" value={email}
+                  onChange={e=>setEmail(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="등록한 이메일 입력"
+                  style={inp}
+                  autoFocus
+                />
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{fontSize:11,fontWeight:600,letterSpacing:"0.08em",color:"#555",textTransform:"uppercase"}}>비밀번호</label>
+                <input
+                  type="password" value={password}
+                  onChange={e=>setPassword(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="비밀번호 입력"
+                  style={inp}
+                />
+              </div>
+
+              {error && (
+                <div style={{padding:"8px 12px",borderRadius:8,fontSize:12,background:"#2A1515",color:"#D06060",border:"1px solid #442222"}}>
+                  ⚠ {error}
+                </div>
+              )}
+
+              <button
+                onClick={handleLogin}
+                disabled={loading}
+                style={{marginTop:4,padding:"11px",fontSize:14,fontWeight:600,borderRadius:8,cursor:loading?"not-allowed":"pointer",background:loading?"#2A2A38":"#7B5EA7",color:loading?"#555":"#fff",border:"none",transition:"background 0.2s"}}>
+                {loading ? "로그인 중…" : "로그인"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── App ───────────────────────────────────────────────────────
     function App() {
+      const [authState, setAuthState] = useState("loading"); // loading | loggedOut | loggedIn
       const [works, setWorks] = useState([]);
       const [showForm, setShowForm] = useState(false);
       const [editWork, setEditWork] = useState(null);
       const [confirmDelete, setConfirmDelete] = useState(null);
-      const [loaded, setLoaded] = useState(false);
+      const [dataLoaded, setDataLoaded] = useState(false);
       const workRefs = useRef({});
 
+      // 로그인 상태 감지
       useEffect(() => {
+        const unsub = firebase.auth().onAuthStateChanged(user => {
+          setAuthState(user ? "loggedIn" : "loggedOut");
+        });
+        return () => unsub();
+      }, []);
+
+      // 로그인 후 데이터 로드
+      useEffect(() => {
+        if (authState !== "loggedIn") return;
         loadData().then(d => {
           const ws = (d.works||[]).map(w=>({...w, milestones: migrateMilestones(w.milestones)}));
           setWorks(ws);
-          setLoaded(true);
+          setDataLoaded(true);
         });
-      }, []);
+      }, [authState]);
 
+      // 데이터 저장
       useEffect(() => {
-        if (!loaded) return;
-        saveData(works).catch(e => console.error("save error", e));
-      }, [works, loaded]);
+        if (!dataLoaded) return;
+        saveData(works).catch(e=>console.error("save error",e));
+      }, [works, dataLoaded]);
+
+      const handleLogout = () => {
+        firebase.auth().signOut();
+        setWorks([]); setDataLoaded(false);
+      };
 
       const toggleEpisode = (workId, ep) => {
         setWorks(prev => prev.map(w => {
@@ -123,9 +210,20 @@
 
       const scrollTo = (id) => workRefs.current[id]?.scrollIntoView({behavior:"smooth",block:"start"});
 
-      if (!loaded) return (
+      // 로딩 중
+      if (authState === "loading") return (
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#13131A",color:"#888",fontFamily:"system-ui"}}>
           불러오는 중…
+        </div>
+      );
+
+      // 로그아웃 상태
+      if (authState === "loggedOut") return <LoginScreen onLogin={()=>{}} />;
+
+      // 데이터 로딩 중
+      if (!dataLoaded) return (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#13131A",color:"#888",fontFamily:"system-ui"}}>
+          데이터 불러오는 중…
         </div>
       );
 
@@ -155,10 +253,16 @@
                 </nav>
               )}
             </div>
-            <button onClick={()=>{setEditWork(null);setShowForm(true);}}
-              style={{flexShrink:0,padding:"6px 14px",fontSize:12,fontWeight:600,borderRadius:8,cursor:"pointer",background:"#2A2A38",color:"#B0AAC0",border:"1px solid #3A3A50"}}>
-              + 새 작품
-            </button>
+            <div style={{display:"flex",gap:8,flexShrink:0}}>
+              <button onClick={()=>{setEditWork(null);setShowForm(true);}}
+                style={{padding:"6px 14px",fontSize:12,fontWeight:600,borderRadius:8,cursor:"pointer",background:"#2A2A38",color:"#B0AAC0",border:"1px solid #3A3A50"}}>
+                + 새 작품
+              </button>
+              <button onClick={handleLogout}
+                style={{padding:"6px 12px",fontSize:12,borderRadius:8,cursor:"pointer",background:"transparent",color:"#555",border:"1px solid #2A2A38"}}>
+                로그아웃
+              </button>
+            </div>
           </header>
 
           {/* 작품 목록 */}
@@ -207,15 +311,12 @@
       const pct = total > 0 ? Math.round(done/total*100) : 0;
       const sorted = [...work.milestones].sort((a,b)=>a.startEpisode-b.startEpisode);
       const [collapsed, setCollapsed] = useState(false);
-
       return (
         <section ref={ref}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
             <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
               <div style={{width:10,height:10,borderRadius:2,flexShrink:0,background:work.color}} />
-              <h2 style={{fontSize:18,fontWeight:700,color:"#E8E4DE",letterSpacing:"-0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                {work.title}
-              </h2>
+              <h2 style={{fontSize:18,fontWeight:700,color:"#E8E4DE",letterSpacing:"-0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{work.title}</h2>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <div style={{width:80,height:3,borderRadius:99,overflow:"hidden",background:"#2A2A38"}}>
                   <div style={{height:"100%",borderRadius:99,background:work.color,width:`${pct}%`,transition:"width 0.3s"}} />
@@ -248,13 +349,12 @@
       const isComplete = doneCount === episodes.length;
       const days = daysUntil(ms.deadline);
       let statusLabel="", statusStyle={};
-      if (isComplete)           { statusLabel="완료";              statusStyle={background:"#1C3325",color:"#5CB87A"}; }
-      else if (days===null)     { statusLabel="마감 미설정";        statusStyle={background:"#222",color:"#555"}; }
-      else if (days<0)          { statusLabel=`${Math.abs(days)}일 초과`; statusStyle={background:"#2A1515",color:"#C05050"}; }
-      else if (days===0)        { statusLabel="오늘 마감";          statusStyle={background:"#2A2010",color:"#D4903A"}; }
-      else if (days<=7)         { statusLabel=`D-${days}`;         statusStyle={background:"#2A2010",color:"#D4903A"}; }
-      else                      { statusLabel=`D-${days}`;         statusStyle={background:"#1A1A24",color:"#666"}; }
-
+      if (isComplete)       { statusLabel="완료";                   statusStyle={background:"#1C3325",color:"#5CB87A"}; }
+      else if (days===null) { statusLabel="마감 미설정";             statusStyle={background:"#222",color:"#555"}; }
+      else if (days<0)      { statusLabel=`${Math.abs(days)}일 초과`; statusStyle={background:"#2A1515",color:"#C05050"}; }
+      else if (days===0)    { statusLabel="오늘 마감";               statusStyle={background:"#2A2010",color:"#D4903A"}; }
+      else if (days<=7)     { statusLabel=`D-${days}`;              statusStyle={background:"#2A2010",color:"#D4903A"}; }
+      else                  { statusLabel=`D-${days}`;              statusStyle={background:"#1A1A24",color:"#666"}; }
       return (
         <div style={{borderRadius:12,overflow:"hidden",background:"#1A1A24",border:"1px solid #2A2A38"}}>
           <div style={{padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #2A2A38",background:`${work.color}0A`}}>
@@ -285,7 +385,7 @@
         <button onClick={onToggle} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
           title={done?`${ep}화 · ${date} (클릭해서 취소)`:`${ep}화 완료로 표시`}
           style={{width:44,height:44,borderRadius:8,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"transform 0.1s",transform:hover?"scale(1.08)":"scale(1)",
-            background:done?color:"#22222E", border:done?`1px solid ${color}`:"1px solid #2E2E3E",
+            background:done?color:"#22222E",border:done?`1px solid ${color}`:"1px solid #2E2E3E",
             boxShadow:done?`0 0 8px ${color}33`:"none"}}>
           <span style={{fontSize:11,fontWeight:700,color:done?"rgba(255,255,255,0.95)":"#4A4A5E",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{ep}</span>
           {done && date && <span style={{fontSize:8.5,color:"rgba(255,255,255,0.7)",marginTop:2,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{formatDate(date)}</span>}
@@ -303,14 +403,12 @@
           : [{id:`m${Date.now()}`,label:"",startEpisode:"1",endEpisode:"",deadline:""}]
       );
       const [error, setError] = useState("");
-
       const addMs = () => {
         const lastEnd = milestones.reduce((max,m)=>{const e=parseInt(m.endEpisode);return isNaN(e)?max:Math.max(max,e)},0);
         setMilestones(p=>[...p,{id:`m${Date.now()}`,label:"",startEpisode:lastEnd>0?String(lastEnd+1):"",endEpisode:"",deadline:""}]);
       };
       const removeMs = id => setMilestones(p=>p.filter(m=>m.id!==id));
       const updateMs = (id,f,v) => { setError(""); setMilestones(p=>p.map(m=>m.id===id?{...m,[f]:v}:m)); };
-
       const handleSave = () => {
         setError("");
         if (!title.trim()) { setError("작품명을 입력해주세요."); return; }
@@ -333,10 +431,8 @@
         }
         onSave({...(initial||{}),title:title.trim(),color,milestones:sorted,episodes:initial?.episodes||{}});
       };
-
       const inp = {background:"#13131A",border:"1px solid #2E2E40",color:"#C8C4BE",borderRadius:6,padding:"7px 10px",fontSize:13,outline:"none",width:"100%"};
       const lbl = {fontSize:10,fontWeight:600,letterSpacing:"0.08em",color:"#555",textTransform:"uppercase",display:"block",marginBottom:4};
-
       return (
         <div onClick={e=>e.target===e.currentTarget&&onClose()}
           style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,background:"rgba(0,0,0,0.7)",padding:16}}>
@@ -345,7 +441,6 @@
               <span style={{fontSize:14,fontWeight:600,color:"#C8C4BE"}}>{initial?"작품 편집":"새 작품 추가"}</span>
               <button onClick={onClose} style={{fontSize:20,lineHeight:1,color:"#555",padding:"0 4px",background:"none",border:"none",cursor:"pointer"}}>×</button>
             </div>
-
             <div style={{padding:20,display:"flex",flexDirection:"column",gap:20,overflowY:"auto",flex:1}}>
               <div>
                 <label style={lbl}>작품명</label>
@@ -395,7 +490,6 @@
                 </button>
               </div>
             </div>
-
             <div style={{padding:"16px 20px",borderTop:"1px solid #2A2A38",flexShrink:0}}>
               {error&&<div style={{marginBottom:12,padding:"8px 12px",borderRadius:8,fontSize:12,background:"#2A1515",color:"#D06060",border:"1px solid #442222"}}>⚠ {error}</div>}
               <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
