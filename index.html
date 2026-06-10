@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>회차 트래커</title>
+  <style>* { box-sizing: border-box; margin: 0; padding: 0; }</style>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <!-- React -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel (JSX 변환) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script>
+    /* ============================================================
+       ★ 여기만 본인 Firebase 설정으로 교체하세요 ★
+       Firebase 콘솔 → 프로젝트 설정 → 내 앱 → firebaseConfig
+    ============================================================ */
+    const firebaseConfig = {
+      apiKey: "AIzaSyBoRXCrrFv0f5vcPMk-tx6elYy-faMKuH8",
+      authDomain: "serial-tracker-19852.firebaseapp.com",
+      projectId: "serial-tracker-19852",
+      storageBucket: "serial-tracker-19852.firebasestorage.app",
+      messagingSenderId: "706481863628",
+      appId: "1:706481863628:web:858b36f04773eb262c3b69"
+    };
+    firebase.initializeApp(firebaseConfig);
+
+    async function loadData() {
+      try {
+        const snap = await firebase.firestore().doc("tracker/main").get();
+        return snap.exists ? snap.data() : { works: [] };
+      } catch(e) {
+        console.error("load error", e);
+        return { works: [] };
+      }
+    }
+    async function saveData(works) {
+      await firebase.firestore().doc("tracker/main").set({ works });
+    }
+  </script>
+</head>
+<body style="background:#13131A">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, forwardRef } = React;
+
+    const PALETTE = ["#C45C8A","#7B5EA7","#4A90D9","#3BA68C","#D4823A","#C0544A","#5B8E6B","#6E7A8A"];
+
+    const formatDate = (s) => {
+      if (!s) return "";
+      const [,m,d] = s.split("-");
+      return `${parseInt(m)}/${parseInt(d)}`;
+    };
+    const today = () => new Date().toISOString().split("T")[0];
+    const daysUntil = (s) => {
+      if (!s) return null;
+      const d = new Date(s); d.setHours(0,0,0,0);
+      const n = new Date(); n.setHours(0,0,0,0);
+      return Math.ceil((d-n)/(1000*60*60*24));
+    };
+    const migrateMilestones = (ms) => {
+      if (!ms || !ms.length) return ms;
+      if (ms[0].endEpisode !== undefined) return ms;
+      let prev = 0;
+      return ms.slice().sort((a,b)=>a.targetEpisode-b.targetEpisode).map(m => {
+        const r = {...m, startEpisode: prev+1, endEpisode: m.targetEpisode};
+        delete r.targetEpisode; prev = m.targetEpisode; return r;
+      });
+    };
+
+    // ── App ──────────────────────────────────────────────────────
+    function App() {
+      const [works, setWorks] = useState([]);
+      const [showForm, setShowForm] = useState(false);
+      const [editWork, setEditWork] = useState(null);
+      const [confirmDelete, setConfirmDelete] = useState(null);
+      const [loaded, setLoaded] = useState(false);
+      const workRefs = useRef({});
+
+      useEffect(() => {
+        loadData().then(d => {
+          const ws = (d.works||[]).map(w=>({...w, milestones: migrateMilestones(w.milestones)}));
+          setWorks(ws);
+          setLoaded(true);
+        });
+      }, []);
+
+      useEffect(() => {
+        if (!loaded) return;
+        saveData(works).catch(e => console.error("save error", e));
+      }, [works, loaded]);
+
+      const toggleEpisode = (workId, ep) => {
+        setWorks(prev => prev.map(w => {
+          if (w.id !== workId) return w;
+          const eps = {...w.episodes};
+          if (eps[ep]) delete eps[ep]; else eps[ep] = { completedAt: today() };
+          return {...w, episodes: eps};
+        }));
+      };
+
+      const saveWork = (data) => {
+        if (data.id) {
+          setWorks(prev => prev.map(w => w.id === data.id ? data : w));
+        } else {
+          const nw = {...data, id:`w${Date.now()}`, episodes:{}};
+          setWorks(prev => [...prev, nw]);
+          setTimeout(() => workRefs.current[nw.id]?.scrollIntoView({behavior:"smooth",block:"start"}), 100);
+        }
+        setShowForm(false); setEditWork(null);
+      };
+
+      const confirmDeleteDo = () => {
+        setWorks(prev => prev.filter(w => w.id !== confirmDelete));
+        setConfirmDelete(null);
+      };
+
+      const scrollTo = (id) => workRefs.current[id]?.scrollIntoView({behavior:"smooth",block:"start"});
+
+      if (!loaded) return (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#13131A",color:"#888",fontFamily:"system-ui"}}>
+          불러오는 중…
+        </div>
+      );
+
+      return (
+        <div style={{background:"#13131A",minHeight:"100vh",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+          {/* 상단바 */}
+          <header style={{position:"sticky",top:0,zIndex:30,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 24px",background:"#13131Aee",backdropFilter:"blur(10px)",borderBottom:"1px solid #2A2A38"}}>
+            <div style={{display:"flex",alignItems:"center",gap:20,minWidth:0}}>
+              <div style={{flexShrink:0}}>
+                <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",color:"#555"}}>SERIAL</span>
+                <span style={{marginLeft:8,fontSize:14,fontWeight:700,color:"#E8E4DE"}}>회차 트래커</span>
+              </div>
+              {works.length > 0 && (
+                <nav style={{display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none"}}>
+                  {works.map(w => {
+                    const total = w.milestones.flatMap(m=>Array.from({length:m.endEpisode-m.startEpisode+1},(_,i)=>m.startEpisode+i)).length;
+                    const done = Object.keys(w.episodes||{}).length;
+                    const pct = total > 0 ? Math.round(done/total*100) : 0;
+                    return (
+                      <button key={w.id} onClick={()=>scrollTo(w.id)}
+                        style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:20,fontSize:12,whiteSpace:"nowrap",cursor:"pointer",background:`${w.color}22`,color:w.color,border:`1px solid ${w.color}44`}}>
+                        <span>{w.title}</span>
+                        <span style={{opacity:0.7}}>{pct}%</span>
+                      </button>
+                    );
+                  })}
+                </nav>
+              )}
+            </div>
+            <button onClick={()=>{setEditWork(null);setShowForm(true);}}
+              style={{flexShrink:0,padding:"6px 14px",fontSize:12,fontWeight:600,borderRadius:8,cursor:"pointer",background:"#2A2A38",color:"#B0AAC0",border:"1px solid #3A3A50"}}>
+              + 새 작품
+            </button>
+          </header>
+
+          {/* 작품 목록 */}
+          <div style={{padding:"24px",maxWidth:900,margin:"0 auto",display:"flex",flexDirection:"column",gap:40}}>
+            {works.length === 0 ? (
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",paddingTop:120,color:"#444"}}>
+                <div style={{fontSize:48,opacity:0.3}}>✍</div>
+                <div style={{marginTop:16,fontSize:14,color:"#555"}}>아직 등록된 작품이 없어요</div>
+                <button onClick={()=>setShowForm(true)}
+                  style={{marginTop:12,padding:"8px 16px",fontSize:13,borderRadius:8,cursor:"pointer",background:"#2A2A38",color:"#B0AAC0",border:"none"}}>
+                  첫 작품 추가하기
+                </button>
+              </div>
+            ) : works.map(w => (
+              <WorkSection key={w.id} work={w}
+                ref={el => workRefs.current[w.id] = el}
+                onToggle={ep=>toggleEpisode(w.id,ep)}
+                onEdit={()=>{setEditWork(w);setShowForm(true);}}
+                onDelete={()=>setConfirmDelete(w.id)} />
+            ))}
+          </div>
+
+          {showForm && <WorkForm initial={editWork} onSave={saveWork} onClose={()=>{setShowForm(false);setEditWork(null);}} />}
+
+          {confirmDelete && (
+            <div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,background:"rgba(0,0,0,0.7)",padding:16}}>
+              <div style={{background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:14,padding:24,maxWidth:320,width:"100%",display:"flex",flexDirection:"column",gap:16}}>
+                <div style={{fontSize:14,fontWeight:600,color:"#E8E4DE"}}>작품을 삭제할까요?</div>
+                <div style={{fontSize:12,color:"#666"}}>삭제하면 모든 회차 기록이 사라지고 되돌릴 수 없습니다.</div>
+                <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                  <button onClick={()=>setConfirmDelete(null)} style={{padding:"8px 16px",fontSize:13,borderRadius:8,cursor:"pointer",background:"#22222E",color:"#888",border:"1px solid #2E2E40"}}>취소</button>
+                  <button onClick={confirmDeleteDo} style={{padding:"8px 16px",fontSize:13,fontWeight:600,borderRadius:8,cursor:"pointer",background:"#7A2020",color:"#fff",border:"none"}}>삭제</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── WorkSection ───────────────────────────────────────────────
+    const WorkSection = forwardRef(function WorkSection({work, onToggle, onEdit, onDelete}, ref) {
+      const allEps = work.milestones.flatMap(m=>Array.from({length:m.endEpisode-m.startEpisode+1},(_,i)=>m.startEpisode+i));
+      const total = allEps.length;
+      const done = Object.keys(work.episodes||{}).length;
+      const pct = total > 0 ? Math.round(done/total*100) : 0;
+      const sorted = [...work.milestones].sort((a,b)=>a.startEpisode-b.startEpisode);
+      const [collapsed, setCollapsed] = useState(false);
+
+      return (
+        <section ref={ref}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
+              <div style={{width:10,height:10,borderRadius:2,flexShrink:0,background:work.color}} />
+              <h2 style={{fontSize:18,fontWeight:700,color:"#E8E4DE",letterSpacing:"-0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {work.title}
+              </h2>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:80,height:3,borderRadius:99,overflow:"hidden",background:"#2A2A38"}}>
+                  <div style={{height:"100%",borderRadius:99,background:work.color,width:`${pct}%`,transition:"width 0.3s"}} />
+                </div>
+                <span style={{fontSize:12,color:"#555",fontVariantNumeric:"tabular-nums"}}>
+                  {done}<span style={{color:"#3A3A4A"}}>/{total}</span>
+                  <span style={{marginLeft:6,fontWeight:600,color:work.color}}>{pct}%</span>
+                </span>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button onClick={()=>setCollapsed(v=>!v)} style={{padding:"4px 10px",fontSize:11,borderRadius:6,cursor:"pointer",background:"#2A2A38",color:"#666",border:"none"}}>{collapsed?"펼치기":"접기"}</button>
+              <button onClick={onEdit} style={{padding:"4px 10px",fontSize:11,borderRadius:6,cursor:"pointer",background:"#2A2A38",color:"#777",border:"none"}}>편집</button>
+              <button onClick={onDelete} style={{padding:"4px 10px",fontSize:11,borderRadius:6,cursor:"pointer",background:"#2A1A1A",color:"#774444",border:"none"}}>삭제</button>
+            </div>
+          </div>
+          {!collapsed && (
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {sorted.map((ms,i) => <MilestoneGroup key={ms.id||i} ms={ms} work={work} onToggle={onToggle} />)}
+            </div>
+          )}
+        </section>
+      );
+    });
+
+    // ── MilestoneGroup ────────────────────────────────────────────
+    function MilestoneGroup({ms, work, onToggle}) {
+      const episodes = Array.from({length:ms.endEpisode-ms.startEpisode+1},(_,i)=>ms.startEpisode+i);
+      const doneCount = episodes.filter(ep=>work.episodes[ep]).length;
+      const isComplete = doneCount === episodes.length;
+      const days = daysUntil(ms.deadline);
+      let statusLabel="", statusStyle={};
+      if (isComplete)           { statusLabel="완료";              statusStyle={background:"#1C3325",color:"#5CB87A"}; }
+      else if (days===null)     { statusLabel="마감 미설정";        statusStyle={background:"#222",color:"#555"}; }
+      else if (days<0)          { statusLabel=`${Math.abs(days)}일 초과`; statusStyle={background:"#2A1515",color:"#C05050"}; }
+      else if (days===0)        { statusLabel="오늘 마감";          statusStyle={background:"#2A2010",color:"#D4903A"}; }
+      else if (days<=7)         { statusLabel=`D-${days}`;         statusStyle={background:"#2A2010",color:"#D4903A"}; }
+      else                      { statusLabel=`D-${days}`;         statusStyle={background:"#1A1A24",color:"#666"}; }
+
+      return (
+        <div style={{borderRadius:12,overflow:"hidden",background:"#1A1A24",border:"1px solid #2A2A38"}}>
+          <div style={{padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #2A2A38",background:`${work.color}0A`}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:13,fontWeight:600,color:"#C8C4BE"}}>{ms.label||`${ms.startEpisode}~${ms.endEpisode}화`}</span>
+              <span style={{fontSize:11,color:"#555"}}>{ms.startEpisode}~{ms.endEpisode}화 ({episodes.length}화)</span>
+              <span style={{fontSize:11,padding:"2px 8px",borderRadius:99,fontWeight:600,...statusStyle}}>{statusLabel}</span>
+            </div>
+            <div style={{display:"flex",gap:12,fontSize:11,color:"#555"}}>
+              <span>{doneCount}/{episodes.length}</span>
+              {ms.deadline && <span>{ms.deadline}</span>}
+            </div>
+          </div>
+          <div style={{padding:12,display:"flex",flexWrap:"wrap",gap:6}}>
+            {episodes.map(ep => {
+              const epData = work.episodes[ep];
+              return <EpisodeSlot key={ep} ep={ep} done={!!epData} date={epData?.completedAt} color={work.color} onToggle={()=>onToggle(ep)} />;
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ── EpisodeSlot ───────────────────────────────────────────────
+    function EpisodeSlot({ep, done, date, color, onToggle}) {
+      const [hover, setHover] = useState(false);
+      return (
+        <button onClick={onToggle} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+          title={done?`${ep}화 · ${date} (클릭해서 취소)`:`${ep}화 완료로 표시`}
+          style={{width:44,height:44,borderRadius:8,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"transform 0.1s",transform:hover?"scale(1.08)":"scale(1)",
+            background:done?color:"#22222E", border:done?`1px solid ${color}`:"1px solid #2E2E3E",
+            boxShadow:done?`0 0 8px ${color}33`:"none"}}>
+          <span style={{fontSize:11,fontWeight:700,color:done?"rgba(255,255,255,0.95)":"#4A4A5E",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{ep}</span>
+          {done && date && <span style={{fontSize:8.5,color:"rgba(255,255,255,0.7)",marginTop:2,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{formatDate(date)}</span>}
+        </button>
+      );
+    }
+
+    // ── WorkForm ──────────────────────────────────────────────────
+    function WorkForm({initial, onSave, onClose}) {
+      const [title, setTitle] = useState(initial?.title||"");
+      const [color, setColor] = useState(initial?.color||PALETTE[0]);
+      const [milestones, setMilestones] = useState(
+        initial?.milestones?.length > 0
+          ? initial.milestones.map(m=>({...m,startEpisode:String(m.startEpisode),endEpisode:String(m.endEpisode)}))
+          : [{id:`m${Date.now()}`,label:"",startEpisode:"1",endEpisode:"",deadline:""}]
+      );
+      const [error, setError] = useState("");
+
+      const addMs = () => {
+        const lastEnd = milestones.reduce((max,m)=>{const e=parseInt(m.endEpisode);return isNaN(e)?max:Math.max(max,e)},0);
+        setMilestones(p=>[...p,{id:`m${Date.now()}`,label:"",startEpisode:lastEnd>0?String(lastEnd+1):"",endEpisode:"",deadline:""}]);
+      };
+      const removeMs = id => setMilestones(p=>p.filter(m=>m.id!==id));
+      const updateMs = (id,f,v) => { setError(""); setMilestones(p=>p.map(m=>m.id===id?{...m,[f]:v}:m)); };
+
+      const handleSave = () => {
+        setError("");
+        if (!title.trim()) { setError("작품명을 입력해주세요."); return; }
+        const valid = [];
+        for (const m of milestones) {
+          const s = parseInt(m.startEpisode), e = parseInt(m.endEpisode);
+          if (!m.deadline) continue;
+          if (isNaN(s)||isNaN(e)) { setError("화수를 숫자로 입력해주세요."); return; }
+          if (s<1) { setError("시작 화수는 1 이상이어야 합니다."); return; }
+          if (e<s) { setError(`끝 화수(${e})가 시작 화수(${s})보다 작습니다.`); return; }
+          valid.push({...m,startEpisode:s,endEpisode:e});
+        }
+        if (valid.length===0) { setError("마감일이 있는 구간을 하나 이상 입력해주세요."); return; }
+        const sorted = valid.slice().sort((a,b)=>a.startEpisode-b.startEpisode);
+        for (let i=1;i<sorted.length;i++) {
+          if (sorted[i].startEpisode<=sorted[i-1].endEpisode) {
+            setError(`구간이 겹칩니다: ${sorted[i-1].startEpisode}~${sorted[i-1].endEpisode}화 ↔ ${sorted[i].startEpisode}~${sorted[i].endEpisode}화`);
+            return;
+          }
+        }
+        onSave({...(initial||{}),title:title.trim(),color,milestones:sorted,episodes:initial?.episodes||{}});
+      };
+
+      const inp = {background:"#13131A",border:"1px solid #2E2E40",color:"#C8C4BE",borderRadius:6,padding:"7px 10px",fontSize:13,outline:"none",width:"100%"};
+      const lbl = {fontSize:10,fontWeight:600,letterSpacing:"0.08em",color:"#555",textTransform:"uppercase",display:"block",marginBottom:4};
+
+      return (
+        <div onClick={e=>e.target===e.currentTarget&&onClose()}
+          style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,background:"rgba(0,0,0,0.7)",padding:16}}>
+          <div style={{width:"100%",maxWidth:480,background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:14,maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+            <div style={{padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #2A2A38",flexShrink:0}}>
+              <span style={{fontSize:14,fontWeight:600,color:"#C8C4BE"}}>{initial?"작품 편집":"새 작품 추가"}</span>
+              <button onClick={onClose} style={{fontSize:20,lineHeight:1,color:"#555",padding:"0 4px",background:"none",border:"none",cursor:"pointer"}}>×</button>
+            </div>
+
+            <div style={{padding:20,display:"flex",flexDirection:"column",gap:20,overflowY:"auto",flex:1}}>
+              <div>
+                <label style={lbl}>작품명</label>
+                <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="예: 어느 날 갑자기" style={inp} />
+              </div>
+              <div>
+                <label style={lbl}>대표 색상</label>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                  {PALETTE.map(c=>(
+                    <button key={c} onClick={()=>setColor(c)} style={{width:28,height:28,borderRadius:6,cursor:"pointer",background:c,border:"none",outline:color===c?`2px solid ${c}`:"none",outlineOffset:2,transform:color===c?"scale(1.15)":"scale(1)",transition:"transform 0.1s"}} />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label style={lbl}>마감 구간</label>
+                <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                  {milestones.map((ms,i)=>(
+                    <div key={ms.id} style={{background:"#13131A",border:"1px solid #2A2A38",borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:10}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                        <span style={{fontSize:11,color:"#555",fontWeight:600}}>구간 {i+1}</span>
+                        {milestones.length>1&&<button onClick={()=>removeMs(ms.id)} style={{fontSize:11,color:"#664444",background:"none",border:"none",cursor:"pointer"}}>제거</button>}
+                      </div>
+                      <input value={ms.label} onChange={e=>updateMs(ms.id,"label",e.target.value)} placeholder="구간 이름 (선택) — 예: 1부 완결" style={inp} />
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
+                          <span style={lbl}>시작 화수</span>
+                          <input type="number" value={ms.startEpisode} onChange={e=>updateMs(ms.id,"startEpisode",e.target.value)} placeholder="1" min="1" style={inp} />
+                        </div>
+                        <span style={{color:"#444",fontSize:18,marginTop:16,flexShrink:0}}>–</span>
+                        <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
+                          <span style={lbl}>끝 화수</span>
+                          <input type="number" value={ms.endEpisode} onChange={e=>updateMs(ms.id,"endEpisode",e.target.value)} placeholder="40" min="1" style={inp} />
+                        </div>
+                        {ms.startEpisode&&ms.endEpisode&&parseInt(ms.endEpisode)>=parseInt(ms.startEpisode)&&(
+                          <span style={{fontSize:10,color:"#555",marginTop:16,flexShrink:0}}>{parseInt(ms.endEpisode)-parseInt(ms.startEpisode)+1}화</span>
+                        )}
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                        <span style={lbl}>마감일</span>
+                        <input type="date" value={ms.deadline} onChange={e=>updateMs(ms.id,"deadline",e.target.value)} style={inp} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={addMs} style={{marginTop:10,width:"100%",padding:"8px",fontSize:12,borderRadius:8,cursor:"pointer",background:"transparent",border:"1px dashed #2E2E40",color:"#666"}}>
+                  + 구간 추가
+                </button>
+              </div>
+            </div>
+
+            <div style={{padding:"16px 20px",borderTop:"1px solid #2A2A38",flexShrink:0}}>
+              {error&&<div style={{marginBottom:12,padding:"8px 12px",borderRadius:8,fontSize:12,background:"#2A1515",color:"#D06060",border:"1px solid #442222"}}>⚠ {error}</div>}
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                <button onClick={onClose} style={{padding:"8px 16px",fontSize:13,borderRadius:8,cursor:"pointer",background:"#22222E",color:"#888",border:"1px solid #2E2E40"}}>취소</button>
+                <button onClick={handleSave} style={{padding:"8px 16px",fontSize:13,fontWeight:600,borderRadius:8,cursor:"pointer",background:color,color:"#fff",border:"none"}}>저장</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
