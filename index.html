@@ -4,505 +4,473 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>회차 트래커</title>
-  <style>* { box-sizing: border-box; margin: 0; padding: 0; }</style>
-
-  <!-- Firebase -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-  <!-- React -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <!-- Babel (JSX 변환) -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <script>
-    /* ============================================================
-       ★ 여기만 본인 Firebase 설정으로 교체하세요 ★
-    ============================================================ */
-    const firebaseConfig = {
-      apiKey: "AIzaSyBoRXCrrFv0f5vcPMk-tx6elYy-faMKuH8",
-      authDomain: "serial-tracker-19852.firebaseapp.com",
-      projectId: "serial-tracker-19852",
-      storageBucket: "serial-tracker-19852.firebasestorage.app",
-      messagingSenderId: "706481863628",
-      appId: "1:706481863628:web:858b36f04773eb262c3b69"
-    };
-    firebase.initializeApp(firebaseConfig);
-
-    async function loadData() {
-      try {
-        const snap = await firebase.firestore().doc("tracker/main").get();
-        return snap.exists ? snap.data() : { works: [] };
-      } catch(e) { return { works: [] }; }
-    }
-    async function saveData(works) {
-      await firebase.firestore().doc("tracker/main").set({ works });
-    }
-  </script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #13131A; font-family: 'Segoe UI', system-ui, sans-serif; }
+    input:focus { border-color: #7B5EA7 !important; }
+    input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: #1A1A24; }
+    ::-webkit-scrollbar-thumb { background: #3A3A50; border-radius: 2px; }
+  </style>
 </head>
-<body style="background:#13131A">
-  <div id="root"></div>
+<body>
+<div id="root"></div>
 
-  <script type="text/babel">
-    const { useState, useEffect, useRef, forwardRef } = React;
+<!-- Firebase 9 compat -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
-    // ── 상수 ──────────────────────────────────────────────────────
-    const PALETTE = ["#C45C8A","#7B5EA7","#4A90D9","#3BA68C","#D4823A","#C0544A","#5B8E6B","#6E7A8A"];
-    const formatDate = (s) => { if (!s) return ""; const [,m,d] = s.split("-"); return `${parseInt(m)}/${parseInt(d)}`; };
-    const today = () => new Date().toISOString().split("T")[0];
-    const daysUntil = (s) => {
-      if (!s) return null;
-      const d = new Date(s); d.setHours(0,0,0,0);
-      const n = new Date(); n.setHours(0,0,0,0);
-      return Math.ceil((d-n)/(1000*60*60*24));
-    };
-    const migrateMilestones = (ms) => {
-      if (!ms || !ms.length) return ms;
-      if (ms[0].endEpisode !== undefined) return ms;
-      let prev = 0;
-      return ms.slice().sort((a,b)=>a.targetEpisode-b.targetEpisode).map(m => {
-        const r = {...m, startEpisode: prev+1, endEpisode: m.targetEpisode};
-        delete r.targetEpisode; prev = m.targetEpisode; return r;
-      });
-    };
+<!-- React 18 -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-    // ── 로그인 화면 ───────────────────────────────────────────────
-    function LoginScreen({ onLogin }) {
-      const [email, setEmail] = useState("");
-      const [password, setPassword] = useState("");
-      const [error, setError] = useState("");
-      const [loading, setLoading] = useState(false);
+<!-- htm (JSX 없이 React 쓰기, Babel 불필요) -->
+<script src="https://unpkg.com/htm@3/dist/htm.js"></script>
 
-      const handleLogin = async () => {
-        setError(""); setLoading(true);
-        try {
-          await firebase.auth().signInWithEmailAndPassword(email, password);
-          onLogin();
-        } catch(e) {
-          if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password" || e.code === "auth/user-not-found") {
-            setError("이메일 또는 비밀번호가 틀렸습니다.");
-          } else {
-            setError("로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
-          }
-        }
-        setLoading(false);
-      };
+<script>
+/* ============================================================
+   ★ 여기를 Firebase 콘솔에서 복사한 값으로 교체하세요 ★
+============================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyBoRXCrrFv0f5vcPMk-tx6elYy-faMKuH8",
+  authDomain: "serial-tracker-19852.firebaseapp.com",
+  projectId: "serial-tracker-19852",
+  storageBucket: "serial-tracker-19852.firebasestorage.app",
+  messagingSenderId: "706481863628",
+  appId: "1:706481863628:web:858b36f04773eb262c3b69"
+};
 
-      const handleKeyDown = (e) => { if (e.key === "Enter") handleLogin(); };
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
 
-      const inp = { background:"#1A1A24", border:"1px solid #2E2E40", color:"#C8C4BE", borderRadius:8, padding:"10px 14px", fontSize:14, outline:"none", width:"100%" };
+async function loadData() {
+  try {
+    const snap = await db.doc("tracker/main").get();
+    return snap.exists ? snap.data() : { works: [] };
+  } catch(e) { console.error("load:", e); return { works: [] }; }
+}
+async function saveData(works) {
+  try { await db.doc("tracker/main").set({ works }); }
+  catch(e) { console.error("save:", e); }
+}
 
-      return (
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#13131A",fontFamily:"'Segoe UI',system-ui,sans-serif",padding:16}}>
-          <div style={{width:"100%",maxWidth:360,display:"flex",flexDirection:"column",gap:24}}>
-            {/* 헤더 */}
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.15em",color:"#555",marginBottom:6}}>SERIAL</div>
-              <div style={{fontSize:22,fontWeight:700,color:"#E8E4DE",letterSpacing:"-0.02em"}}>회차 트래커</div>
-            </div>
+// ── 유틸 ──────────────────────────────────────────────────────
+const PALETTE = ["#C45C8A","#7B5EA7","#4A90D9","#3BA68C","#D4823A","#C0544A","#5B8E6B","#6E7A8A"];
+const fmtDate = s => { if (!s) return ""; const [,m,d] = s.split("-"); return `${+m}/${+d}`; };
+const todayStr = () => new Date().toISOString().split("T")[0];
+const daysUntil = s => {
+  if (!s) return null;
+  const d = new Date(s); d.setHours(0,0,0,0);
+  const n = new Date(); n.setHours(0,0,0,0);
+  return Math.ceil((d-n)/86400000);
+};
+const migrate = ms => {
+  if (!ms || !ms.length || ms[0].endEpisode !== undefined) return ms || [];
+  let prev = 0;
+  return ms.slice().sort((a,b)=>a.targetEpisode-b.targetEpisode).map(m => {
+    const r = {...m, startEpisode: prev+1, endEpisode: m.targetEpisode};
+    delete r.targetEpisode; prev = m.targetEpisode; return r;
+  });
+};
 
-            {/* 폼 */}
-            <div style={{background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:14,padding:24,display:"flex",flexDirection:"column",gap:14}}>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:11,fontWeight:600,letterSpacing:"0.08em",color:"#555",textTransform:"uppercase"}}>이메일</label>
-                <input
-                  type="email" value={email}
-                  onChange={e=>setEmail(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="등록한 이메일 입력"
-                  style={inp}
-                  autoFocus
-                />
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{fontSize:11,fontWeight:600,letterSpacing:"0.08em",color:"#555",textTransform:"uppercase"}}>비밀번호</label>
-                <input
-                  type="password" value={password}
-                  onChange={e=>setPassword(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="비밀번호 입력"
-                  style={inp}
-                />
-              </div>
+// ── htm 설정 ──────────────────────────────────────────────────
+const { useState, useEffect, useRef, useCallback } = React;
+const html = htm.bind(React.createElement);
 
-              {error && (
-                <div style={{padding:"8px 12px",borderRadius:8,fontSize:12,background:"#2A1515",color:"#D06060",border:"1px solid #442222"}}>
-                  ⚠ {error}
-                </div>
-              )}
+// ── 스타일 헬퍼 ───────────────────────────────────────────────
+const S = {
+  inp: { background:"#13131A", border:"1px solid #2E2E40", color:"#C8C4BE", borderRadius:6, padding:"8px 12px", fontSize:13, outline:"none", width:"100%" },
+  lbl: { fontSize:10, fontWeight:600, letterSpacing:"0.08em", color:"#555", textTransform:"uppercase", display:"block", marginBottom:5 },
+  btn: (bg, color) => ({ padding:"8px 16px", fontSize:13, borderRadius:8, cursor:"pointer", background:bg, color:color||"#fff", border:"none", fontWeight:600 }),
+};
 
-              <button
-                onClick={handleLogin}
-                disabled={loading}
-                style={{marginTop:4,padding:"11px",fontSize:14,fontWeight:600,borderRadius:8,cursor:loading?"not-allowed":"pointer",background:loading?"#2A2A38":"#7B5EA7",color:loading?"#555":"#fff",border:"none",transition:"background 0.2s"}}>
-                {loading ? "로그인 중…" : "로그인"}
-              </button>
-            </div>
-          </div>
-        </div>
-      );
+// ═══════════════════════════════════════════════════════════════
+// 로그인 화면
+// ═══════════════════════════════════════════════════════════════
+function LoginScreen() {
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const login = async () => {
+    setErr(""); setLoading(true);
+    try {
+      await auth.signInWithEmailAndPassword(email, pw);
+    } catch(e) {
+      setErr(e.code === "auth/wrong-password" || e.code === "auth/user-not-found" || e.code === "auth/invalid-credential"
+        ? "이메일 또는 비밀번호가 틀렸습니다."
+        : "오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
     }
+    setLoading(false);
+  };
+  const onKey = e => e.key === "Enter" && login();
 
-    // ── App ───────────────────────────────────────────────────────
-    function App() {
-      const [authState, setAuthState] = useState("loading"); // loading | loggedOut | loggedIn
-      const [works, setWorks] = useState([]);
-      const [showForm, setShowForm] = useState(false);
-      const [editWork, setEditWork] = useState(null);
-      const [confirmDelete, setConfirmDelete] = useState(null);
-      const [dataLoaded, setDataLoaded] = useState(false);
-      const workRefs = useRef({});
-
-      // 로그인 상태 감지
-      useEffect(() => {
-        const unsub = firebase.auth().onAuthStateChanged(user => {
-          setAuthState(user ? "loggedIn" : "loggedOut");
-        });
-        return () => unsub();
-      }, []);
-
-      // 로그인 후 데이터 로드
-      useEffect(() => {
-        if (authState !== "loggedIn") return;
-        loadData().then(d => {
-          const ws = (d.works||[]).map(w=>({...w, milestones: migrateMilestones(w.milestones)}));
-          setWorks(ws);
-          setDataLoaded(true);
-        });
-      }, [authState]);
-
-      // 데이터 저장
-      useEffect(() => {
-        if (!dataLoaded) return;
-        saveData(works).catch(e=>console.error("save error",e));
-      }, [works, dataLoaded]);
-
-      const handleLogout = () => {
-        firebase.auth().signOut();
-        setWorks([]); setDataLoaded(false);
-      };
-
-      const toggleEpisode = (workId, ep) => {
-        setWorks(prev => prev.map(w => {
-          if (w.id !== workId) return w;
-          const eps = {...w.episodes};
-          if (eps[ep]) delete eps[ep]; else eps[ep] = { completedAt: today() };
-          return {...w, episodes: eps};
-        }));
-      };
-
-      const saveWork = (data) => {
-        if (data.id) {
-          setWorks(prev => prev.map(w => w.id === data.id ? data : w));
-        } else {
-          const nw = {...data, id:`w${Date.now()}`, episodes:{}};
-          setWorks(prev => [...prev, nw]);
-          setTimeout(() => workRefs.current[nw.id]?.scrollIntoView({behavior:"smooth",block:"start"}), 100);
-        }
-        setShowForm(false); setEditWork(null);
-      };
-
-      const confirmDeleteDo = () => {
-        setWorks(prev => prev.filter(w => w.id !== confirmDelete));
-        setConfirmDelete(null);
-      };
-
-      const scrollTo = (id) => workRefs.current[id]?.scrollIntoView({behavior:"smooth",block:"start"});
-
-      // 로딩 중
-      if (authState === "loading") return (
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#13131A",color:"#888",fontFamily:"system-ui"}}>
-          불러오는 중…
+  return html`
+    <div style=${{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:16}}>
+      <div style=${{width:"100%",maxWidth:340}}>
+        <div style=${{textAlign:"center",marginBottom:28}}>
+          <div style=${{fontSize:10,fontWeight:700,letterSpacing:"0.15em",color:"#555",marginBottom:6}}>SERIAL</div>
+          <div style=${{fontSize:22,fontWeight:700,color:"#E8E4DE",letterSpacing:"-0.02em"}}>회차 트래커</div>
         </div>
-      );
-
-      // 로그아웃 상태
-      if (authState === "loggedOut") return <LoginScreen onLogin={()=>{}} />;
-
-      // 데이터 로딩 중
-      if (!dataLoaded) return (
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#13131A",color:"#888",fontFamily:"system-ui"}}>
-          데이터 불러오는 중…
-        </div>
-      );
-
-      return (
-        <div style={{background:"#13131A",minHeight:"100vh",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
-          {/* 상단바 */}
-          <header style={{position:"sticky",top:0,zIndex:30,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 24px",background:"#13131Aee",backdropFilter:"blur(10px)",borderBottom:"1px solid #2A2A38"}}>
-            <div style={{display:"flex",alignItems:"center",gap:20,minWidth:0}}>
-              <div style={{flexShrink:0}}>
-                <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",color:"#555"}}>SERIAL</span>
-                <span style={{marginLeft:8,fontSize:14,fontWeight:700,color:"#E8E4DE"}}>회차 트래커</span>
-              </div>
-              {works.length > 0 && (
-                <nav style={{display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none"}}>
-                  {works.map(w => {
-                    const total = w.milestones.flatMap(m=>Array.from({length:m.endEpisode-m.startEpisode+1},(_,i)=>m.startEpisode+i)).length;
-                    const done = Object.keys(w.episodes||{}).length;
-                    const pct = total > 0 ? Math.round(done/total*100) : 0;
-                    return (
-                      <button key={w.id} onClick={()=>scrollTo(w.id)}
-                        style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:20,fontSize:12,whiteSpace:"nowrap",cursor:"pointer",background:`${w.color}22`,color:w.color,border:`1px solid ${w.color}44`}}>
-                        <span>{w.title}</span>
-                        <span style={{opacity:0.7}}>{pct}%</span>
-                      </button>
-                    );
-                  })}
-                </nav>
-              )}
-            </div>
-            <div style={{display:"flex",gap:8,flexShrink:0}}>
-              <button onClick={()=>{setEditWork(null);setShowForm(true);}}
-                style={{padding:"6px 14px",fontSize:12,fontWeight:600,borderRadius:8,cursor:"pointer",background:"#2A2A38",color:"#B0AAC0",border:"1px solid #3A3A50"}}>
-                + 새 작품
-              </button>
-              <button onClick={handleLogout}
-                style={{padding:"6px 12px",fontSize:12,borderRadius:8,cursor:"pointer",background:"transparent",color:"#555",border:"1px solid #2A2A38"}}>
-                로그아웃
-              </button>
-            </div>
-          </header>
-
-          {/* 작품 목록 */}
-          <div style={{padding:"24px",maxWidth:900,margin:"0 auto",display:"flex",flexDirection:"column",gap:40}}>
-            {works.length === 0 ? (
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",paddingTop:120,color:"#444"}}>
-                <div style={{fontSize:48,opacity:0.3}}>✍</div>
-                <div style={{marginTop:16,fontSize:14,color:"#555"}}>아직 등록된 작품이 없어요</div>
-                <button onClick={()=>setShowForm(true)}
-                  style={{marginTop:12,padding:"8px 16px",fontSize:13,borderRadius:8,cursor:"pointer",background:"#2A2A38",color:"#B0AAC0",border:"none"}}>
-                  첫 작품 추가하기
-                </button>
-              </div>
-            ) : works.map(w => (
-              <WorkSection key={w.id} work={w}
-                ref={el => workRefs.current[w.id] = el}
-                onToggle={ep=>toggleEpisode(w.id,ep)}
-                onEdit={()=>{setEditWork(w);setShowForm(true);}}
-                onDelete={()=>setConfirmDelete(w.id)} />
-            ))}
+        <div style=${{background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:14,padding:24,display:"flex",flexDirection:"column",gap:14}}>
+          <div>
+            <label style=${S.lbl}>이메일</label>
+            <input type="email" value=${email} onInput=${e=>setEmail(e.target.value)} onKeyDown=${onKey}
+              placeholder="등록한 이메일" style=${S.inp} />
           </div>
-
-          {showForm && <WorkForm initial={editWork} onSave={saveWork} onClose={()=>{setShowForm(false);setEditWork(null);}} />}
-
-          {confirmDelete && (
-            <div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,background:"rgba(0,0,0,0.7)",padding:16}}>
-              <div style={{background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:14,padding:24,maxWidth:320,width:"100%",display:"flex",flexDirection:"column",gap:16}}>
-                <div style={{fontSize:14,fontWeight:600,color:"#E8E4DE"}}>작품을 삭제할까요?</div>
-                <div style={{fontSize:12,color:"#666"}}>삭제하면 모든 회차 기록이 사라지고 되돌릴 수 없습니다.</div>
-                <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                  <button onClick={()=>setConfirmDelete(null)} style={{padding:"8px 16px",fontSize:13,borderRadius:8,cursor:"pointer",background:"#22222E",color:"#888",border:"1px solid #2E2E40"}}>취소</button>
-                  <button onClick={confirmDeleteDo} style={{padding:"8px 16px",fontSize:13,fontWeight:600,borderRadius:8,cursor:"pointer",background:"#7A2020",color:"#fff",border:"none"}}>삭제</button>
-                </div>
-              </div>
-            </div>
-          )}
+          <div>
+            <label style=${S.lbl}>비밀번호</label>
+            <input type="password" value=${pw} onInput=${e=>setPw(e.target.value)} onKeyDown=${onKey}
+              placeholder="비밀번호" style=${S.inp} />
+          </div>
+          ${err && html`<div style=${{padding:"8px 12px",borderRadius:8,fontSize:12,background:"#2A1515",color:"#D06060",border:"1px solid #442222"}}>⚠ ${err}</div>`}
+          <button onClick=${login} disabled=${loading}
+            style=${{...S.btn(loading?"#2A2A38":"#7B5EA7"),marginTop:4,padding:"11px",fontSize:14,opacity:loading?0.6:1}}>
+            ${loading ? "로그인 중…" : "로그인"}
+          </button>
         </div>
-      );
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 에피소드 슬롯
+// ═══════════════════════════════════════════════════════════════
+function EpSlot({ ep, done, date, color, onToggle }) {
+  const [hover, setHover] = useState(false);
+  return html`
+    <button onClick=${onToggle} onMouseEnter=${()=>setHover(true)} onMouseLeave=${()=>setHover(false)}
+      title=${done?`${ep}화 · ${date} (클릭해서 취소)`:`${ep}화 완료`}
+      style=${{width:44,height:44,borderRadius:8,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+        cursor:"pointer",border:"none",transition:"transform 0.1s",transform:hover?"scale(1.08)":"scale(1)",
+        background:done?color:"#22222E",outline:done?`1px solid ${color}`:"1px solid #2E2E3E",
+        boxShadow:done?`0 0 8px ${color}33`:"none"}}>
+      <span style=${{fontSize:11,fontWeight:700,color:done?"rgba(255,255,255,0.95)":"#4A4A5E",lineHeight:1}}>${ep}</span>
+      ${done && date && html`<span style=${{fontSize:8.5,color:"rgba(255,255,255,0.7)",marginTop:2,lineHeight:1}}>${fmtDate(date)}</span>`}
+    </button>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 마감 구간
+// ═══════════════════════════════════════════════════════════════
+function MsGroup({ ms, work, onToggle }) {
+  const eps = Array.from({length:ms.endEpisode-ms.startEpisode+1},(_,i)=>ms.startEpisode+i);
+  const doneN = eps.filter(ep=>work.episodes[ep]).length;
+  const done = doneN === eps.length;
+  const days = daysUntil(ms.deadline);
+  let label="", st={};
+  if (done)         { label="완료";                    st={background:"#1C3325",color:"#5CB87A"}; }
+  else if (!days && days!==0) { label="마감 미설정";   st={background:"#222",color:"#555"}; }
+  else if (days<0)  { label=`${Math.abs(days)}일 초과`; st={background:"#2A1515",color:"#C05050"}; }
+  else if (days===0){ label="오늘 마감";               st={background:"#2A2010",color:"#D4903A"}; }
+  else if (days<=7) { label=`D-${days}`;              st={background:"#2A2010",color:"#D4903A"}; }
+  else              { label=`D-${days}`;              st={background:"#1A1A24",color:"#666"}; }
+  return html`
+    <div style=${{borderRadius:12,overflow:"hidden",background:"#1A1A24",border:"1px solid #2A2A38"}}>
+      <div style=${{padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #2A2A38",background:`${work.color}0A`}}>
+        <div style=${{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style=${{fontSize:13,fontWeight:600,color:"#C8C4BE"}}>${ms.label||`${ms.startEpisode}~${ms.endEpisode}화`}</span>
+          <span style=${{fontSize:11,color:"#555"}}>${ms.startEpisode}~${ms.endEpisode}화 (${eps.length}화)</span>
+          <span style=${{fontSize:11,padding:"2px 8px",borderRadius:99,fontWeight:600,...st}}>${label}</span>
+        </div>
+        <div style=${{fontSize:11,color:"#555",display:"flex",gap:10,flexShrink:0}}>
+          <span>${doneN}/${eps.length}</span>
+          ${ms.deadline && html`<span>${ms.deadline}</span>`}
+        </div>
+      </div>
+      <div style=${{padding:12,display:"flex",flexWrap:"wrap",gap:6}}>
+        ${eps.map(ep => html`<${EpSlot} key=${ep} ep=${ep} done=${!!work.episodes[ep]}
+          date=${work.episodes[ep]?.completedAt} color=${work.color} onToggle=${()=>onToggle(ep)} />`)}
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 작품 섹션
+// ═══════════════════════════════════════════════════════════════
+function WorkSection({ work, onToggle, onEdit, onDelete, refEl }) {
+  const allEps = work.milestones.flatMap(m=>Array.from({length:m.endEpisode-m.startEpisode+1},(_,i)=>m.startEpisode+i));
+  const total = allEps.length;
+  const done = Object.keys(work.episodes||{}).length;
+  const pct = total > 0 ? Math.round(done/total*100) : 0;
+  const sorted = [...work.milestones].sort((a,b)=>a.startEpisode-b.startEpisode);
+  const [collapsed, setCollapsed] = useState(false);
+  return html`
+    <section ref=${refEl}>
+      <div style=${{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+        <div style=${{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+          <div style=${{width:10,height:10,borderRadius:2,flexShrink:0,background:work.color}} />
+          <h2 style=${{fontSize:18,fontWeight:700,color:"#E8E4DE",letterSpacing:"-0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>${work.title}</h2>
+          <div style=${{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+            <div style=${{width:80,height:3,borderRadius:99,overflow:"hidden",background:"#2A2A38"}}>
+              <div style=${{height:"100%",borderRadius:99,background:work.color,width:`${pct}%`,transition:"width 0.3s"}} />
+            </div>
+            <span style=${{fontSize:12,color:"#555"}}>
+              ${done}<span style=${{color:"#3A3A4A"}}>/${total}</span>
+              <span style=${{marginLeft:6,fontWeight:600,color:work.color}}>${pct}%</span>
+            </span>
+          </div>
+        </div>
+        <div style=${{display:"flex",gap:6,flexShrink:0}}>
+          <button onClick=${()=>setCollapsed(v=>!v)} style=${{padding:"4px 10px",fontSize:11,borderRadius:6,cursor:"pointer",background:"#2A2A38",color:"#666",border:"none"}}>${collapsed?"펼치기":"접기"}</button>
+          <button onClick=${onEdit} style=${{padding:"4px 10px",fontSize:11,borderRadius:6,cursor:"pointer",background:"#2A2A38",color:"#888",border:"none"}}>편집</button>
+          <button onClick=${onDelete} style=${{padding:"4px 10px",fontSize:11,borderRadius:6,cursor:"pointer",background:"#2A1A1A",color:"#774444",border:"none"}}>삭제</button>
+        </div>
+      </div>
+      ${!collapsed && html`
+        <div style=${{display:"flex",flexDirection:"column",gap:12}}>
+          ${sorted.map((ms,i)=>html`<${MsGroup} key=${ms.id||i} ms=${ms} work=${work} onToggle=${onToggle} />`)}
+        </div>`}
+    </section>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 작품 폼
+// ═══════════════════════════════════════════════════════════════
+function WorkForm({ initial, onSave, onClose }) {
+  const [title, setTitle] = useState(initial?.title||"");
+  const [color, setColor] = useState(initial?.color||PALETTE[0]);
+  const [msList, setMsList] = useState(
+    initial?.milestones?.length > 0
+      ? initial.milestones.map(m=>({...m,startEpisode:String(m.startEpisode),endEpisode:String(m.endEpisode)}))
+      : [{id:`m${Date.now()}`,label:"",startEpisode:"1",endEpisode:"",deadline:""}]
+  );
+  const [err, setErr] = useState("");
+
+  const addMs = () => {
+    const last = msList.reduce((mx,m)=>{const e=+m.endEpisode;return isNaN(e)?mx:Math.max(mx,e)},0);
+    setMsList(p=>[...p,{id:`m${Date.now()}`,label:"",startEpisode:last>0?String(last+1):"",endEpisode:"",deadline:""}]);
+  };
+  const rmMs = id => setMsList(p=>p.filter(m=>m.id!==id));
+  const upMs = (id,f,v) => { setErr(""); setMsList(p=>p.map(m=>m.id===id?{...m,[f]:v}:m)); };
+
+  const save = () => {
+    setErr("");
+    if (!title.trim()) { setErr("작품명을 입력해주세요."); return; }
+    const valid = [];
+    for (const m of msList) {
+      const s=+m.startEpisode, e=+m.endEpisode;
+      if (!m.deadline) continue;
+      if (isNaN(s)||isNaN(e)) { setErr("화수를 숫자로 입력해주세요."); return; }
+      if (s<1) { setErr("시작 화수는 1 이상이어야 합니다."); return; }
+      if (e<s) { setErr(`끝 화수(${e})가 시작 화수(${s})보다 작습니다.`); return; }
+      valid.push({...m,startEpisode:s,endEpisode:e});
     }
+    if (!valid.length) { setErr("마감일이 있는 구간을 하나 이상 입력해주세요."); return; }
+    const sorted = valid.slice().sort((a,b)=>a.startEpisode-b.startEpisode);
+    for (let i=1;i<sorted.length;i++) {
+      if (sorted[i].startEpisode<=sorted[i-1].endEpisode) {
+        setErr(`구간 겹침: ${sorted[i-1].startEpisode}~${sorted[i-1].endEpisode}화 ↔ ${sorted[i].startEpisode}~${sorted[i].endEpisode}화`);
+        return;
+      }
+    }
+    onSave({...(initial||{}),title:title.trim(),color,milestones:sorted,episodes:initial?.episodes||{}});
+  };
 
-    // ── WorkSection ───────────────────────────────────────────────
-    const WorkSection = forwardRef(function WorkSection({work, onToggle, onEdit, onDelete}, ref) {
-      const allEps = work.milestones.flatMap(m=>Array.from({length:m.endEpisode-m.startEpisode+1},(_,i)=>m.startEpisode+i));
-      const total = allEps.length;
-      const done = Object.keys(work.episodes||{}).length;
-      const pct = total > 0 ? Math.round(done/total*100) : 0;
-      const sorted = [...work.milestones].sort((a,b)=>a.startEpisode-b.startEpisode);
-      const [collapsed, setCollapsed] = useState(false);
-      return (
-        <section ref={ref}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
-              <div style={{width:10,height:10,borderRadius:2,flexShrink:0,background:work.color}} />
-              <h2 style={{fontSize:18,fontWeight:700,color:"#E8E4DE",letterSpacing:"-0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{work.title}</h2>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{width:80,height:3,borderRadius:99,overflow:"hidden",background:"#2A2A38"}}>
-                  <div style={{height:"100%",borderRadius:99,background:work.color,width:`${pct}%`,transition:"width 0.3s"}} />
-                </div>
-                <span style={{fontSize:12,color:"#555",fontVariantNumeric:"tabular-nums"}}>
-                  {done}<span style={{color:"#3A3A4A"}}>/{total}</span>
-                  <span style={{marginLeft:6,fontWeight:600,color:work.color}}>{pct}%</span>
-                </span>
-              </div>
-            </div>
-            <div style={{display:"flex",gap:6,flexShrink:0}}>
-              <button onClick={()=>setCollapsed(v=>!v)} style={{padding:"4px 10px",fontSize:11,borderRadius:6,cursor:"pointer",background:"#2A2A38",color:"#666",border:"none"}}>{collapsed?"펼치기":"접기"}</button>
-              <button onClick={onEdit} style={{padding:"4px 10px",fontSize:11,borderRadius:6,cursor:"pointer",background:"#2A2A38",color:"#777",border:"none"}}>편집</button>
-              <button onClick={onDelete} style={{padding:"4px 10px",fontSize:11,borderRadius:6,cursor:"pointer",background:"#2A1A1A",color:"#774444",border:"none"}}>삭제</button>
-            </div>
-          </div>
-          {!collapsed && (
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              {sorted.map((ms,i) => <MilestoneGroup key={ms.id||i} ms={ms} work={work} onToggle={onToggle} />)}
-            </div>
-          )}
-        </section>
-      );
-    });
-
-    // ── MilestoneGroup ────────────────────────────────────────────
-    function MilestoneGroup({ms, work, onToggle}) {
-      const episodes = Array.from({length:ms.endEpisode-ms.startEpisode+1},(_,i)=>ms.startEpisode+i);
-      const doneCount = episodes.filter(ep=>work.episodes[ep]).length;
-      const isComplete = doneCount === episodes.length;
-      const days = daysUntil(ms.deadline);
-      let statusLabel="", statusStyle={};
-      if (isComplete)       { statusLabel="완료";                   statusStyle={background:"#1C3325",color:"#5CB87A"}; }
-      else if (days===null) { statusLabel="마감 미설정";             statusStyle={background:"#222",color:"#555"}; }
-      else if (days<0)      { statusLabel=`${Math.abs(days)}일 초과`; statusStyle={background:"#2A1515",color:"#C05050"}; }
-      else if (days===0)    { statusLabel="오늘 마감";               statusStyle={background:"#2A2010",color:"#D4903A"}; }
-      else if (days<=7)     { statusLabel=`D-${days}`;              statusStyle={background:"#2A2010",color:"#D4903A"}; }
-      else                  { statusLabel=`D-${days}`;              statusStyle={background:"#1A1A24",color:"#666"}; }
-      return (
-        <div style={{borderRadius:12,overflow:"hidden",background:"#1A1A24",border:"1px solid #2A2A38"}}>
-          <div style={{padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #2A2A38",background:`${work.color}0A`}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:13,fontWeight:600,color:"#C8C4BE"}}>{ms.label||`${ms.startEpisode}~${ms.endEpisode}화`}</span>
-              <span style={{fontSize:11,color:"#555"}}>{ms.startEpisode}~{ms.endEpisode}화 ({episodes.length}화)</span>
-              <span style={{fontSize:11,padding:"2px 8px",borderRadius:99,fontWeight:600,...statusStyle}}>{statusLabel}</span>
-            </div>
-            <div style={{display:"flex",gap:12,fontSize:11,color:"#555"}}>
-              <span>{doneCount}/{episodes.length}</span>
-              {ms.deadline && <span>{ms.deadline}</span>}
-            </div>
-          </div>
-          <div style={{padding:12,display:"flex",flexWrap:"wrap",gap:6}}>
-            {episodes.map(ep => {
-              const epData = work.episodes[ep];
-              return <EpisodeSlot key={ep} ep={ep} done={!!epData} date={epData?.completedAt} color={work.color} onToggle={()=>onToggle(ep)} />;
-            })}
-          </div>
+  return html`
+    <div onClick=${e=>e.target===e.currentTarget&&onClose()}
+      style=${{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,background:"rgba(0,0,0,0.7)",padding:16}}>
+      <div style=${{width:"100%",maxWidth:480,background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:14,maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style=${{padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #2A2A38"}}>
+          <span style=${{fontSize:14,fontWeight:600,color:"#C8C4BE"}}>${initial?"작품 편집":"새 작품 추가"}</span>
+          <button onClick=${onClose} style=${{fontSize:20,color:"#555",background:"none",border:"none",cursor:"pointer",lineHeight:1}}>×</button>
         </div>
-      );
-    }
-
-    // ── EpisodeSlot ───────────────────────────────────────────────
-    function EpisodeSlot({ep, done, date, color, onToggle}) {
-      const [hover, setHover] = useState(false);
-      return (
-        <button onClick={onToggle} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
-          title={done?`${ep}화 · ${date} (클릭해서 취소)`:`${ep}화 완료로 표시`}
-          style={{width:44,height:44,borderRadius:8,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"transform 0.1s",transform:hover?"scale(1.08)":"scale(1)",
-            background:done?color:"#22222E",border:done?`1px solid ${color}`:"1px solid #2E2E3E",
-            boxShadow:done?`0 0 8px ${color}33`:"none"}}>
-          <span style={{fontSize:11,fontWeight:700,color:done?"rgba(255,255,255,0.95)":"#4A4A5E",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{ep}</span>
-          {done && date && <span style={{fontSize:8.5,color:"rgba(255,255,255,0.7)",marginTop:2,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{formatDate(date)}</span>}
-        </button>
-      );
-    }
-
-    // ── WorkForm ──────────────────────────────────────────────────
-    function WorkForm({initial, onSave, onClose}) {
-      const [title, setTitle] = useState(initial?.title||"");
-      const [color, setColor] = useState(initial?.color||PALETTE[0]);
-      const [milestones, setMilestones] = useState(
-        initial?.milestones?.length > 0
-          ? initial.milestones.map(m=>({...m,startEpisode:String(m.startEpisode),endEpisode:String(m.endEpisode)}))
-          : [{id:`m${Date.now()}`,label:"",startEpisode:"1",endEpisode:"",deadline:""}]
-      );
-      const [error, setError] = useState("");
-      const addMs = () => {
-        const lastEnd = milestones.reduce((max,m)=>{const e=parseInt(m.endEpisode);return isNaN(e)?max:Math.max(max,e)},0);
-        setMilestones(p=>[...p,{id:`m${Date.now()}`,label:"",startEpisode:lastEnd>0?String(lastEnd+1):"",endEpisode:"",deadline:""}]);
-      };
-      const removeMs = id => setMilestones(p=>p.filter(m=>m.id!==id));
-      const updateMs = (id,f,v) => { setError(""); setMilestones(p=>p.map(m=>m.id===id?{...m,[f]:v}:m)); };
-      const handleSave = () => {
-        setError("");
-        if (!title.trim()) { setError("작품명을 입력해주세요."); return; }
-        const valid = [];
-        for (const m of milestones) {
-          const s = parseInt(m.startEpisode), e = parseInt(m.endEpisode);
-          if (!m.deadline) continue;
-          if (isNaN(s)||isNaN(e)) { setError("화수를 숫자로 입력해주세요."); return; }
-          if (s<1) { setError("시작 화수는 1 이상이어야 합니다."); return; }
-          if (e<s) { setError(`끝 화수(${e})가 시작 화수(${s})보다 작습니다.`); return; }
-          valid.push({...m,startEpisode:s,endEpisode:e});
-        }
-        if (valid.length===0) { setError("마감일이 있는 구간을 하나 이상 입력해주세요."); return; }
-        const sorted = valid.slice().sort((a,b)=>a.startEpisode-b.startEpisode);
-        for (let i=1;i<sorted.length;i++) {
-          if (sorted[i].startEpisode<=sorted[i-1].endEpisode) {
-            setError(`구간이 겹칩니다: ${sorted[i-1].startEpisode}~${sorted[i-1].endEpisode}화 ↔ ${sorted[i].startEpisode}~${sorted[i].endEpisode}화`);
-            return;
-          }
-        }
-        onSave({...(initial||{}),title:title.trim(),color,milestones:sorted,episodes:initial?.episodes||{}});
-      };
-      const inp = {background:"#13131A",border:"1px solid #2E2E40",color:"#C8C4BE",borderRadius:6,padding:"7px 10px",fontSize:13,outline:"none",width:"100%"};
-      const lbl = {fontSize:10,fontWeight:600,letterSpacing:"0.08em",color:"#555",textTransform:"uppercase",display:"block",marginBottom:4};
-      return (
-        <div onClick={e=>e.target===e.currentTarget&&onClose()}
-          style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,background:"rgba(0,0,0,0.7)",padding:16}}>
-          <div style={{width:"100%",maxWidth:480,background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:14,maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
-            <div style={{padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #2A2A38",flexShrink:0}}>
-              <span style={{fontSize:14,fontWeight:600,color:"#C8C4BE"}}>{initial?"작품 편집":"새 작품 추가"}</span>
-              <button onClick={onClose} style={{fontSize:20,lineHeight:1,color:"#555",padding:"0 4px",background:"none",border:"none",cursor:"pointer"}}>×</button>
+        <div style=${{padding:20,overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:20}}>
+          <div>
+            <label style=${S.lbl}>작품명</label>
+            <input value=${title} onInput=${e=>setTitle(e.target.value)} placeholder="예: 어느 날 갑자기" style=${S.inp} />
+          </div>
+          <div>
+            <label style=${S.lbl}>대표 색상</label>
+            <div style=${{display:"flex",gap:10,flexWrap:"wrap"}}>
+              ${PALETTE.map(c=>html`
+                <button key=${c} onClick=${()=>setColor(c)}
+                  style=${{width:28,height:28,borderRadius:6,cursor:"pointer",background:c,border:"none",
+                    outline:color===c?`2px solid ${c}`:"none",outlineOffset:2,transform:color===c?"scale(1.15)":"scale(1)",transition:"transform 0.1s"}} />`)}
             </div>
-            <div style={{padding:20,display:"flex",flexDirection:"column",gap:20,overflowY:"auto",flex:1}}>
-              <div>
-                <label style={lbl}>작품명</label>
-                <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="예: 어느 날 갑자기" style={inp} />
-              </div>
-              <div>
-                <label style={lbl}>대표 색상</label>
-                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                  {PALETTE.map(c=>(
-                    <button key={c} onClick={()=>setColor(c)} style={{width:28,height:28,borderRadius:6,cursor:"pointer",background:c,border:"none",outline:color===c?`2px solid ${c}`:"none",outlineOffset:2,transform:color===c?"scale(1.15)":"scale(1)",transition:"transform 0.1s"}} />
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label style={lbl}>마감 구간</label>
-                <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                  {milestones.map((ms,i)=>(
-                    <div key={ms.id} style={{background:"#13131A",border:"1px solid #2A2A38",borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:10}}>
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                        <span style={{fontSize:11,color:"#555",fontWeight:600}}>구간 {i+1}</span>
-                        {milestones.length>1&&<button onClick={()=>removeMs(ms.id)} style={{fontSize:11,color:"#664444",background:"none",border:"none",cursor:"pointer"}}>제거</button>}
-                      </div>
-                      <input value={ms.label} onChange={e=>updateMs(ms.id,"label",e.target.value)} placeholder="구간 이름 (선택) — 예: 1부 완결" style={inp} />
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
-                          <span style={lbl}>시작 화수</span>
-                          <input type="number" value={ms.startEpisode} onChange={e=>updateMs(ms.id,"startEpisode",e.target.value)} placeholder="1" min="1" style={inp} />
-                        </div>
-                        <span style={{color:"#444",fontSize:18,marginTop:16,flexShrink:0}}>–</span>
-                        <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
-                          <span style={lbl}>끝 화수</span>
-                          <input type="number" value={ms.endEpisode} onChange={e=>updateMs(ms.id,"endEpisode",e.target.value)} placeholder="40" min="1" style={inp} />
-                        </div>
-                        {ms.startEpisode&&ms.endEpisode&&parseInt(ms.endEpisode)>=parseInt(ms.startEpisode)&&(
-                          <span style={{fontSize:10,color:"#555",marginTop:16,flexShrink:0}}>{parseInt(ms.endEpisode)-parseInt(ms.startEpisode)+1}화</span>
-                        )}
-                      </div>
-                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                        <span style={lbl}>마감일</span>
-                        <input type="date" value={ms.deadline} onChange={e=>updateMs(ms.id,"deadline",e.target.value)} style={inp} />
-                      </div>
+          </div>
+          <div>
+            <label style=${S.lbl}>마감 구간</label>
+            <div style=${{display:"flex",flexDirection:"column",gap:10}}>
+              ${msList.map((ms,i)=>html`
+                <div key=${ms.id} style=${{background:"#13131A",border:"1px solid #2A2A38",borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:10}}>
+                  <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style=${{fontSize:11,color:"#555",fontWeight:600}}>구간 ${i+1}</span>
+                    ${msList.length>1 && html`<button onClick=${()=>rmMs(ms.id)} style=${{fontSize:11,color:"#664444",background:"none",border:"none",cursor:"pointer"}}>제거</button>`}
+                  </div>
+                  <input value=${ms.label} onInput=${e=>upMs(ms.id,"label",e.target.value)}
+                    placeholder="구간 이름 (선택) — 예: 1부 완결" style=${S.inp} />
+                  <div style=${{display:"flex",alignItems:"center",gap:8}}>
+                    <div style=${{flex:1}}>
+                      <label style=${S.lbl}>시작 화수</label>
+                      <input type="number" value=${ms.startEpisode} onInput=${e=>upMs(ms.id,"startEpisode",e.target.value)}
+                        placeholder="1" min="1" style=${S.inp} />
                     </div>
-                  ))}
-                </div>
-                <button onClick={addMs} style={{marginTop:10,width:"100%",padding:"8px",fontSize:12,borderRadius:8,cursor:"pointer",background:"transparent",border:"1px dashed #2E2E40",color:"#666"}}>
-                  + 구간 추가
-                </button>
-              </div>
+                    <span style=${{color:"#444",fontSize:18,marginTop:14,flexShrink:0}}>–</span>
+                    <div style=${{flex:1}}>
+                      <label style=${S.lbl}>끝 화수</label>
+                      <input type="number" value=${ms.endEpisode} onInput=${e=>upMs(ms.id,"endEpisode",e.target.value)}
+                        placeholder="40" min="1" style=${S.inp} />
+                    </div>
+                    ${ms.startEpisode&&ms.endEpisode&&+ms.endEpisode>=+ms.startEpisode && html`
+                      <span style=${{fontSize:10,color:"#555",marginTop:14,flexShrink:0}}>${+ms.endEpisode - +ms.startEpisode + 1}화</span>`}
+                  </div>
+                  <div>
+                    <label style=${S.lbl}>마감일</label>
+                    <input type="date" value=${ms.deadline} onInput=${e=>upMs(ms.id,"deadline",e.target.value)} style=${S.inp} />
+                  </div>
+                </div>`)}
             </div>
-            <div style={{padding:"16px 20px",borderTop:"1px solid #2A2A38",flexShrink:0}}>
-              {error&&<div style={{marginBottom:12,padding:"8px 12px",borderRadius:8,fontSize:12,background:"#2A1515",color:"#D06060",border:"1px solid #442222"}}>⚠ {error}</div>}
-              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-                <button onClick={onClose} style={{padding:"8px 16px",fontSize:13,borderRadius:8,cursor:"pointer",background:"#22222E",color:"#888",border:"1px solid #2E2E40"}}>취소</button>
-                <button onClick={handleSave} style={{padding:"8px 16px",fontSize:13,fontWeight:600,borderRadius:8,cursor:"pointer",background:color,color:"#fff",border:"none"}}>저장</button>
-              </div>
-            </div>
+            <button onClick=${addMs}
+              style=${{marginTop:10,width:"100%",padding:"8px",fontSize:12,borderRadius:8,cursor:"pointer",background:"transparent",border:"1px dashed #2E2E40",color:"#666"}}>
+              + 구간 추가
+            </button>
           </div>
         </div>
-      );
-    }
+        <div style=${{padding:"14px 20px",borderTop:"1px solid #2A2A38"}}>
+          ${err && html`<div style=${{marginBottom:10,padding:"8px 12px",borderRadius:8,fontSize:12,background:"#2A1515",color:"#D06060",border:"1px solid #442222"}}>⚠ ${err}</div>`}
+          <div style=${{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <button onClick=${onClose} style=${{...S.btn("#22222E","#888"),border:"1px solid #2E2E40",fontWeight:400}}>취소</button>
+            <button onClick=${save} style=${{...S.btn(color)}}>저장</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-  </script>
+// ═══════════════════════════════════════════════════════════════
+// 메인 앱
+// ═══════════════════════════════════════════════════════════════
+function App() {
+  const [auth2, setAuth2] = useState("loading"); // loading | out | in
+  const [works, setWorks] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editWork, setEditWork] = useState(null);
+  const [delConfirm, setDelConfirm] = useState(null);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const refs = useRef({});
+
+  useEffect(()=>{
+    const unsub = auth.onAuthStateChanged(u => setAuth2(u ? "in" : "out"));
+    return ()=>unsub();
+  },[]);
+
+  useEffect(()=>{
+    if (auth2 !== "in") return;
+    loadData().then(d=>{
+      setWorks((d.works||[]).map(w=>({...w,milestones:migrate(w.milestones)})));
+      setDataLoaded(true);
+    });
+  },[auth2]);
+
+  useEffect(()=>{
+    if (!dataLoaded) return;
+    saveData(works);
+  },[works,dataLoaded]);
+
+  const toggle = (wid, ep) => setWorks(prev=>prev.map(w=>{
+    if (w.id!==wid) return w;
+    const eps={...w.episodes};
+    if(eps[ep]) delete eps[ep]; else eps[ep]={completedAt:todayStr()};
+    return {...w,episodes:eps};
+  }));
+
+  const saveWork = data => {
+    if (data.id) {
+      setWorks(p=>p.map(w=>w.id===data.id?data:w));
+    } else {
+      const nw={...data,id:`w${Date.now()}`,episodes:{}};
+      setWorks(p=>[...p,nw]);
+      setTimeout(()=>refs.current[nw.id]?.scrollIntoView({behavior:"smooth",block:"start"}),100);
+    }
+    setShowForm(false); setEditWork(null);
+  };
+
+  const scrollTo = id => refs.current[id]?.scrollIntoView({behavior:"smooth",block:"start"});
+
+  if (auth2==="loading") return html`
+    <div style=${{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",color:"#888"}}>불러오는 중…</div>`;
+
+  if (auth2==="out") return html`<${LoginScreen} />`;
+
+  if (!dataLoaded) return html`
+    <div style=${{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",color:"#888"}}>데이터 로딩 중…</div>`;
+
+  return html`
+    <div style=${{minHeight:"100vh"}}>
+      <!-- 상단바 -->
+      <header style=${{position:"sticky",top:0,zIndex:30,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 24px",background:"#13131Aee",backdropFilter:"blur(10px)",borderBottom:"1px solid #2A2A38"}}>
+        <div style=${{display:"flex",alignItems:"center",gap:16,minWidth:0}}>
+          <div style=${{flexShrink:0}}>
+            <span style=${{fontSize:10,fontWeight:700,letterSpacing:"0.1em",color:"#555"}}>SERIAL</span>
+            <span style=${{marginLeft:8,fontSize:14,fontWeight:700,color:"#E8E4DE"}}>회차 트래커</span>
+          </div>
+          ${works.length>0 && html`
+            <nav style=${{display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none"}}>
+              ${works.map(w=>{
+                const tot=w.milestones.flatMap(m=>Array.from({length:m.endEpisode-m.startEpisode+1},(_,i)=>m.startEpisode+i)).length;
+                const dn=Object.keys(w.episodes||{}).length;
+                const pct=tot>0?Math.round(dn/tot*100):0;
+                return html`
+                  <button key=${w.id} onClick=${()=>scrollTo(w.id)}
+                    style=${{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:20,fontSize:12,whiteSpace:"nowrap",cursor:"pointer",background:`${w.color}22`,color:w.color,border:`1px solid ${w.color}44`}}>
+                    <span>${w.title}</span><span style=${{opacity:0.7}}>${pct}%</span>
+                  </button>`;
+              })}
+            </nav>`}
+        </div>
+        <div style=${{display:"flex",gap:8,flexShrink:0}}>
+          <button onClick=${()=>{setEditWork(null);setShowForm(true);}}
+            style=${{...S.btn("#2A2A38","#B0AAC0"),fontWeight:600,border:"1px solid #3A3A50",fontSize:12,padding:"6px 14px"}}>
+            + 새 작품
+          </button>
+          <button onClick=${()=>auth.signOut()}
+            style=${{padding:"6px 12px",fontSize:12,borderRadius:8,cursor:"pointer",background:"transparent",color:"#555",border:"1px solid #2A2A38"}}>
+            로그아웃
+          </button>
+        </div>
+      </header>
+
+      <!-- 작품 목록 -->
+      <div style=${{padding:24,maxWidth:900,margin:"0 auto",display:"flex",flexDirection:"column",gap:40}}>
+        ${works.length===0
+          ? html`
+            <div style=${{display:"flex",flexDirection:"column",alignItems:"center",paddingTop:120,color:"#444"}}>
+              <div style=${{fontSize:48,opacity:0.3}}>✍</div>
+              <div style=${{marginTop:16,fontSize:14,color:"#555"}}>아직 등록된 작품이 없어요</div>
+              <button onClick=${()=>setShowForm(true)}
+                style=${{marginTop:12,...S.btn("#2A2A38","#B0AAC0"),fontSize:13}}>첫 작품 추가하기</button>
+            </div>`
+          : works.map(w=>html`
+            <${WorkSection} key=${w.id} work=${w}
+              refEl=${el=>refs.current[w.id]=el}
+              onToggle=${ep=>toggle(w.id,ep)}
+              onEdit=${()=>{setEditWork(w);setShowForm(true);}}
+              onDelete=${()=>setDelConfirm(w.id)} />`)}
+      </div>
+
+      ${showForm && html`<${WorkForm} initial=${editWork} onSave=${saveWork} onClose=${()=>{setShowForm(false);setEditWork(null);}} />`}
+
+      ${delConfirm && html`
+        <div style=${{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,background:"rgba(0,0,0,0.7)",padding:16}}>
+          <div style=${{background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:14,padding:24,maxWidth:320,width:"100%",display:"flex",flexDirection:"column",gap:16}}>
+            <div style=${{fontSize:14,fontWeight:600,color:"#E8E4DE"}}>작품을 삭제할까요?</div>
+            <div style=${{fontSize:12,color:"#666"}}>삭제하면 모든 회차 기록이 사라집니다.</div>
+            <div style=${{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick=${()=>setDelConfirm(null)} style=${{...S.btn("#22222E","#888"),border:"1px solid #2E2E40",fontWeight:400}}>취소</button>
+              <button onClick=${()=>{setWorks(p=>p.filter(w=>w.id!==delConfirm));setDelConfirm(null);}}
+                style=${{...S.btn("#7A2020")}}>삭제</button>
+            </div>
+          </div>
+        </div>`}
+    </div>`;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
 </body>
 </html>
